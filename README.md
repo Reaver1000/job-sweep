@@ -1,6 +1,6 @@
 # job-sweep
 
-A multi-source remote job sweep pipeline. Fetches from 20 sources, filters with hard rules, and outputs a triage-ready list of what is actually applicable.
+A multi-source remote job sweep pipeline. Fetches from 24+ sources, filters with hard rules, and outputs a triage-ready list of what is actually applicable.
 
 The design philosophy is elimination, not matching. It pulls wide, then kills what you cannot do, so whatever survives the funnel is worth reading. Expect a 95%+ kill rate and treat that as the tool working.
 
@@ -8,48 +8,62 @@ The design philosophy is elimination, not matching. It pulls wide, then kills wh
 
 | Script | Sources |
 |--------|---------|
-| `job_sweep.py` | Arbeitnow API, RemoteOK, Remotive, WeWorkRemotely RSS, Jobicy, Arbeitsagentur scrape, Ashby boards (~250 companies), Greenhouse boards (~150), Lever, Matcha, WantRemote, Dynamite Jobs, DailyRemote, NoDesk, TestDevJobs, UN Jobs |
+| `job_sweep.py` | Arbeitnow API, RemoteOK, Remotive, WeWorkRemotely RSS, Jobicy, Arbeitsagentur scrape, **Himalayas API, Jobgether JSON-LD**, Ashby boards (~250 companies incl. AI labs: OpenAI, DeepL, Synthesia, Character.AI, Fireworks, ElevenLabs, Mistral, Cohere, n8n...), Greenhouse boards (~150 incl. Stability AI, Together AI, Imbue), Lever, Matcha, WantRemote, Dynamite Jobs, DailyRemote, NoDesk, TestDevJobs, UN Jobs, Council of Europe |
+| `corporate_sweep.py` | Workday CX API for large non-tech employers (Unilever, Sartorius, AstraZeneca — extensible tenant list) |
 | `indeed_sweep.py` | Indeed Germany + UK via Playwright, remote filter, last 7 days |
 | `stepstone_sweep.py` | StepStone Germany via Playwright, JSON-LD + DOM extraction |
-| `linkedin_sweep.py` | LinkedIn Germany via Playwright with a saved login session |
+| `linkedin_sweep.py` | LinkedIn Germany via logged-in browser context, guest API fragments through the session (bypasses IP rate limits), 4 pages per query |
+| `devjobs_sweep.py` | DEVjobs.de — server-rendered category search, remote+level card filtering |
+| `glassdoor_sweep.py` | Glassdoor Germany via persistent real-Chrome profile (Cloudflare Turnstile), targeted junior/remote queries |
 | `ba_sweep.py` | Arbeitsagentur deep-dive with configurable search terms |
 
 ## Quickstart
 
 ```bash
-pip install playwright
+pip install playwright requests
 python -m playwright install chromium
+
+# Scrapling for the Indeed verification lane (solves the Turnstile wall)
+pip install scrapling patchright browserforge msgspec
+python -m patchright install chromium
 
 # one-time: log into LinkedIn once, session is saved for future sweeps
 python li_login.py
 
 # run everything
-python job_sweep.py        # 16 API/RSS sources, writes jobs_found.md + new_jobs.md (incremental)
+python job_sweep.py        # API/RSS/API-board sources, writes jobs_found.md (incremental)
+python corporate_sweep.py  # Workday CX tenants, writes corporate_jobs.md
 python indeed_sweep.py     # writes indeed_jobs.md
 python stepstone_sweep.py  # writes stepstone_jobs.md
 python linkedin_sweep.py   # writes linkedin_jobs.md (needs the saved session)
+python devjobs_sweep.py    # writes devjobs_jobs.md
+python glassdoor_sweep.py  # writes glassdoor_jobs.md (needs the Chrome profile)
 python ba_sweep.py         # writes ba_new.md
 
-# deep-verify Indeed candidates (fill JOBS in verify_indeed.py first)
-python verify_indeed.py
+# diff everything against the previous run
+python diff_new.py
 ```
 
 ## The filter pipeline
 
 `job_sweep.py` kills in order: not remote, region-locked (US/APAC-only), seniority titles, internships, alien stacks, licensed professions, C1-German demands, French/Spanish/Portuguese postings, disguised hybrids, low pay, irrelevant fields. Everything else is scored and family-tagged into `new_jobs.md`, incrementally, so re-running shows only what is new since last time.
 
-All the kill rules live as plain lists at the top of `job_sweep.py`. Edit them for your own profile: your commuter cities, your languages, your pay floor, your stack.
+## Verification
 
-## What I learned running this
+Board listings lie. Titles oversell, locations are wrong, requirements hide in the fine print. The verification layer exists because of that:
 
-- Aggregator titles flatter. LinkedIn especially: verify the actual posting body before believing any title. A "Technical Support Specialist" was a mid-senior strategic accounts role; an "Infrastructure Support Practitioner" wanted years of rollouts. Budget one body-fetch per candidate before it enters your application list.
-- The kill-rate is the feature. Out of 22,000 raw entries, roughly 1,300 survive the filters, and of those maybe 20 are worth applying to. The tool's job is finding those 20 without you reading 22,000 listings.
-- Bot walls are beatable with headless-first, headed-fallback Playwright. Indeed, StepStone, and LinkedIn all work this way. LinkedIn needs a one-time manual login saved to a persistent browser profile.
+- `verify_indeed_scrapling.py` — Indeed job pages via Scrapling's StealthyFetcher with Cloudflare Turnstile auto-solve (vanilla Playwright gets 401/challenge-walled). The mobile endpoint (`/m/viewjob`) serves the full description server-side and detects expired postings.
+- Ashby posting API (`/posting-api/job-board/{slug}`) returns full descriptions incl. `isRemote` flags — catches postings whose location string omits "remote" (a real bug class: one n8n role was invisible for weeks because of it).
+- Workday CX API returns full job descriptions for corporate roles.
 
-## Output files
+## Hard-won notes
 
-`jobs_found.md`, `new_jobs.md`, `indeed_jobs.md`, `stepstone_jobs.md`, `linkedin_jobs.md`, `ba_new.md`, `indeed_verify.md` are all generated state and git-ignored. `diff_new.py` compares a fresh sweep against the previous one so you only read the delta.
+- LinkedIn's search-results DOM renders cards without anchor tags (JS click-handlers). Extracting `/jobs/view/` links from the DOM finds 1 job instead of 25. The working approach: hit the guest API fragment endpoint from inside the logged-in browser context.
+- Workday CX returns `total` only on page 1 — reading it on later pages breaks pagination.
+- Glassdoor search pages pass with a persistent real-Chrome profile (`channel="chrome"`, persistent user-data dir) but job detail pages 403 vanilla requests regardless.
+- Some boards (JustRemote, Flexa) are fully JS-rendered — they need a browser fetcher, not HTTP.
+- The German-IT-consultancy posting pattern (client travel + "verhandlungssichere Deutschkenntnisse" + prior consulting title) is a coherent lane — if that is not your profile, filter it early.
 
-## Disclaimer
+## Output files (gitignored)
 
-Scrapers read public pages and respect each source's tolerance. Rate limits are built in (sleeps between requests), but you are responsible for how you use this against any site's terms of service.
+`jobs_found.md` (pool), `*_jobs.md` / `*_new.md` (per-source), `*_prev.md` (snapshots for diffing), `indeed_verify.md` (verification results).

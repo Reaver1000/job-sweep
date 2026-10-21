@@ -23,7 +23,10 @@ def headers(path):
     return out
 
 
-for cur, prev in [("indeed_jobs.md", "indeed_jobs_prev.md"),
+for cur, prev in [("devjobs_jobs.md", "devjobs_jobs_prev.md"),
+                  ("glassdoor_jobs.md", "glassdoor_jobs_prev.md"),
+                  ("corporate_jobs.md", "corporate_jobs_prev.md"),
+                  ("indeed_jobs.md", "indeed_jobs_prev.md"),
                   ("linkedin_jobs.md", "linkedin_jobs_prev.md"),
                   ("ba_new.md", "ba_new_prev.md")]:
     fresh = headers(cur)

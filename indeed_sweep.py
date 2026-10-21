@@ -13,10 +13,14 @@ from playwright.sync_api import sync_playwright
 OUT = Path(__file__).with_name("indeed_jobs.md")
 REMOTE_SC = "sc=0kf%3Aattr%28DSQF7%29%3B"
 
-DE_QUERIES = ["junior developer", "junior softwareentwickler", "junior support",
+DE_QUERIES = ["junior analyst", "junior business analyst", "junior developer", "junior softwareentwickler", "junior support",
               "junior datenanalyst", "junior qa testautomation", "testautomatisierung junior",
-              "junior python entwickler", "it support junior homeoffice", "junior automation"]
-UK_QUERIES = ["junior developer", "junior data analyst", "junior qa", "junior customer support"]
+              "junior python entwickler", "it support junior homeoffice", "junior automation",
+              "forward deployed engineer junior", "integration engineer junior",
+              "solutions engineer junior", "implementation engineer junior"]
+UK_QUERIES = ["junior analyst", "junior business analyst", "graduate analyst", "junior developer", "junior data analyst", "junior qa", "junior customer support",
+              "forward deployed engineer junior", "solutions engineer junior",
+              "integration engineer junior"]
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 

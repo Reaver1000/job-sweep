@@ -1,6 +1,6 @@
 """Mega-sweep: pull ALL remote-eligible jobs, then ELIMINATE by hard blockers.
 
-Philosophy: do not pre-filter by title. Fetch wide, eliminate what the candidate
+Philosophy: do not pre-filter by title. Fetch wide, eliminate what the user
 cannot do, keep everything else - including oddly-titled roles.
 
 Elimination order (first failing check wins):
@@ -8,7 +8,7 @@ Elimination order (first failing check wins):
   2. region_blocked    - US-only / Americas-only / requires US work auth
   3. seniority         - senior/lead/principal/staff/head/director/manager
   4. internship        - intern/praktikum/werkstudent (low wage, needs enrolment)
-  5. alien_stack       - title demands a stack the candidate does not have (Java, SAP, ...)
+  5. alien_stack       - title demands a stack the user does not have (Java, SAP, ...)
   6. licensed_job      - nurse/lawyer/accountant/electrician etc.
  7. german_c1         - posting demands fluent/C1 German
  7b. posting_language  - body is French/Spanish/Portuguese (can't work in it)
@@ -275,7 +275,7 @@ def _ba_field(card, field):
 def src_arbeitsagentur():
     """Bundesagentur fuer Arbeit jobsuche - HTML scrape (API key is 403).
 
-    Broad terms covering all of the candidate's job families, homeoffice filter on.
+    Broad terms covering all target families, homeoffice filter on.
     ~25 results per page; cap pages to stay polite.
     """
     terms = ["software", "IT", "daten", "support", "test", "analyst",
@@ -411,6 +411,8 @@ def src_nodesk():
 GREENHOUSE_SLUGS = [
     # tracker history + verified
     "canonical", "remotepeople", "xai", "mozilla",
+    # AI companies
+    "stabilityai", "imbue", "togetherai",
     # big tech / remote-friendly
     "stripe", "airbnb", "anthropic", "datadog", "figma", "coinbase", "robinhood",
     "reddit", "gitlab", "shopify", "automatticcareers", "splice", "contentstack",
@@ -592,12 +594,15 @@ def src_dailyremote():
 
 # ---------- ELIMINATION PIPELINE ----------
 
-# Easily commutable from the candidate's home base (<= ~1h): local + 1h-train ring.
-# EXAMPLE ring around Cologne - edit this list for your own home city.
-COMMUTABLE = ["koeln", "cologne", "bonn", "duesseldorf", "dusseldorf", "leverkusen",
-              "troisdorf", "siegburg", "bruehl", "bruhl", "huerth", "hurth",
-              "dormagen", "neuss", "bergisch gladbach", "wesseling",
-              "aachen", "koblenz", "muenster", "muenstermaifeld"]
+# Easily commutable from Erfurt (<= ~1h): local + 1h-train ring
+COMMUTABLE = ["erfurt", "weimar", "jena", "gotha", "eisenach", "ilmenau", "suhl",
+              "arnstadt", "apolda", "sömmerda", "soemmerda", "mühlhausen", "muehlhausen",
+              "nordhausen", "gera", "bad langensalza", "heiligenstadt", "sangerhausen",
+              "naumburg", "zeitz", "altenburg", "greiz", "saalfeld", "rudolstadt",
+              "meiningen", "hildburghausen", "sonneberg", "schmalkalden", "eisenberg",
+              "stadtroda", "kahla", "blankenhain", "buttstädt", "kölleda", "weißensee",
+              "leipzig", "halle", "merseburg", "bitterfeld", "dessau", "köthen",
+              "aschersleben", "quedlinburg", "wernigerode", "halberstadt", "nordhausen"]
 
 
 def commutable(location):
@@ -616,7 +621,7 @@ EU_EMEA = ["germany", "deutschland", "dach", "europe", "emea", "european union",
            "berlin", "munich", "münchen", "hamburg", "cologne", "köln", "frankfurt", "stuttgart",
            "düsseldorf", "dusseldorf", "dresden", "leipzig", "hannover", "nuremberg", "nürnberg",
            "bremen", "bonn", "karlsruhe", "heidelberg", "mannheim", "freiburg", "aachen",
-           "thuringia", "thüringen", "bavaria", "bayern", "saxony",
+           "erfurt", "weimar", "jena", "thuringia", "thüringen", "bavaria", "bayern", "saxony",
            "austria", "vienna", "wien", "graz", "linz", "salzburg", "innsbruck",
            "switzerland", "zurich", "zürich", "geneva", "genf", "basel", "bern", "lausanne",
            "poland", "warsaw", "krakow", "kraków", "wroclaw", "gdansk", "poznan", "pl-",
@@ -723,6 +728,8 @@ def src_ashby():
     except Exception as e:
         print(f"  ashby registry fetch fail: {ascii_safe(str(e))[:50]}")
     slugs.update([
+        "deepl", "synthesia", "alephalpha", "character", "runway",
+        "abridge", "osmo", "rewind", "fireworks", "anyscale", "fathom",
         "openai", "Airwallex", "Snowflake", "LILT", "Crusoe", "Bjak", "Fluidstack",
         "ElevenLabs", "Halter", "Clera", "Legora", "AppliedIntuition", "Harvey",
         "Leland", "ICEYE", "Talkiatry", "Deliveroo", "Mistral", "Linear", "Docker",
@@ -799,7 +806,7 @@ def eliminate(j):
     t = (j["title"] + " ").lower()
     full = (j["title"] + " " + j["location"] + " " + j["desc"] + " " + j["salary"]).lower()
 
-    # 1. not remote - but KEEP if commutable from the candidate's home base (hybrid/onsite ok)
+    # 1. not remote - but KEEP if commutable from Erfurt (hybrid/onsite ok)
     is_remote = j["remote_flag"] or any(w in full for w in REMOTE_WORDS)
     if not is_remote and not commutable(j["location"] + " " + j["desc"][:200]):
         return "not_remote"
@@ -842,7 +849,7 @@ def eliminate(j):
     fr_hits = sum(len(re.findall(rf"\b{re.escape(w)}\b", desc_low)) for w in FRENCH_STOP)
     if fr_hits > 12 and len(j["desc"]) > 300:
         return "french_posting"
-    # 8. hybrid disguised as remote - keep only if commutable from the candidate's home base
+    # 8. hybrid disguised as remote - keep only if commutable from Erfurt
     if any(w in full for w in HYBRID_TELLS):
         if not commutable(j["location"] + " " + j["desc"][:300]):
             return "hybrid_disguised"
@@ -910,11 +917,77 @@ def why_fit(j):
     return "; ".join(hits[:5])
 
 
+def src_himalayas():
+    """Himalayas.app public JSON API, cursor pagination."""
+    cursor = ""
+    for _ in range(6):
+        try:
+            url = "https://himalayas.app/jobs/api?limit=50" + (f"&cursor={cursor}" if cursor else "")
+            d = json.loads(fetch(url))
+        except Exception:
+            break
+        jobs = d.get("jobs", [])
+        if not jobs:
+            break
+        for j in jobs:
+            locs = ", ".join(j.get("locationRestrictions") or [])
+            if not locs:
+                locs = "Worldwide"
+            seniority = ", ".join(j.get("seniority") or [])
+            sal = ""
+            if j.get("minSalary"):
+                sal = f"{j.get('currency') or ''} {j.get('minSalary')}-{j.get('maxSalary')}".strip()
+            desc = clean(j.get("excerpt", "") or j.get("description", ""))[:900]
+            collect(j.get("title", ""), j.get("companyName", ""), locs, True,
+                    [j.get("employmentType", "") or "", seniority],
+                    j.get("applicationLink") or j.get("guid", ""), desc, "himalayas", sal)
+        cursor = d.get("nextCursor", "")
+        if not cursor:
+            break
+        time.sleep(0.4)
+
+
+def src_justremote():
+    """JustRemote - feed.xml returns HTML (dead), cards are JS-rendered.
+    Disabled until a Playwright version exists."""
+    return
+
+
+def src_flexa():
+    """Flexa.careers - job cards are JS-rendered, server HTML only has category
+    nav links. Disabled until a Playwright version exists."""
+    return
+
+
+def src_jobgether():
+    """Jobgether - JSON-LD ItemList on /remote-jobs pages (18/page)."""
+    for page_num in range(1, 6):
+        try:
+            suffix = f"?page={page_num}" if page_num > 1 else ""
+            html = fetch(f"https://jobgether.com/remote-jobs{suffix}").decode("utf-8", "replace")
+        except Exception:
+            continue
+        for block in re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S):
+            try:
+                parsed = json.loads(block)
+            except Exception:
+                continue
+            items = parsed.get("itemListElement", []) if isinstance(parsed, dict) else []
+            for it in items:
+                url = it.get("url", "")
+                name = it.get("name", "")
+                if not url or "offer/" not in url:
+                    continue
+                collect(name, "", "REMOTE", True, [], url, name[:250], "jobgether")
+        time.sleep(0.4)
+
+
 def main():
     for fn in [src_arbeitnow, src_remoteok, src_remotive, src_wwr, src_jobicy,
                src_arbeitsagentur, src_testdevjobs, src_ashby, src_unjobs,
                src_nodesk, src_greenhouse, src_lever, src_matcha, src_wantremote,
-               src_dynamite, src_dailyremote]:
+               src_dynamite, src_dailyremote, src_himalayas, src_justremote,
+               src_flexa, src_jobgether]:
         print(f"{fn.__name__}...", flush=True)
         try:
             fn()

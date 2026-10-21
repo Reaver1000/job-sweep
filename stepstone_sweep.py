@@ -14,7 +14,7 @@ from playwright.sync_api import sync_playwright
 OUT = Path(__file__).with_name("stepstone_jobs.md")
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-QUERIES = ["junior developer", "junior softwareentwickler", "testautomation junior",
+QUERIES = ["junior analyst", "junior business analyst", "junior developer", "junior softwareentwickler", "testautomation junior",
            "datenanalyst junior", "python junior entwickler", "it support junior",
            "junior automation engineer", "junior data engineer"]
 
